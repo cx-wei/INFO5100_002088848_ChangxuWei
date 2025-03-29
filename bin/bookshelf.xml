@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<BookShelf>
+    
+  <Book>
+        
+    <title>Clean Code</title>
+        
+    <publishedYear>2008</publishedYear>
+        
+    <numberOfPages>464</numberOfPages>
+        
+    <authors>
+            
+      <author>Robert C. Martin</author>
+          
+    </authors>
+      
+  </Book>
+    
+  <Book>
+        
+    <title>Effective Java</title>
+        
+    <publishedYear>2018</publishedYear>
+        
+    <numberOfPages>412</numberOfPages>
+        
+    <authors>
+            
+      <author>Joshua Bloch</author>
+          
+    </authors>
+      
+  </Book>
+    
+  <Book>
+        
+    <title>Design Patterns</title>
+        
+    <publishedYear>1994</publishedYear>
+        
+    <numberOfPages>395</numberOfPages>
+        
+    <authors>
+            
+      <author>Erich Gamma</author>
+            
+      <author>Richard Helm</author>
+            
+      <author>Ralph Johnson</author>
+            
+      <author>John Vlissides</author>
+          
+    </authors>
+      
+  </Book>
+  
+  <Book>
+    <title>Refactoring</title>
+    <publishedYear>2018</publishedYear>
+    <numberOfPages>430</numberOfPages>
+    <authors>
+      <author>Martin Fowler</author>
+      <author>Kent Beck</author>
+    </authors>
+  </Book>
+</BookShelf>
