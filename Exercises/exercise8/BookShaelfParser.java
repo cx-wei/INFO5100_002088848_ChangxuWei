@@ -40,6 +40,7 @@ public class BookShaelfParser {
             this.numberOfPages = numberOfPages;
             this.authors = new ArrayList<>();
         }
+        
         public void addAuthor(Author author) {
             authors.add(author);
         }
