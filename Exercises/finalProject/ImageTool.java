@@ -3,16 +3,15 @@ package Exercises.finalProject;
 import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
-import javafx.scene.image.Image;
-import javafx.scene.image.ImageView;
-import javafx.scene.layout.VBox;
+import javafx.scene.image.*;
+import javafx.scene.layout.*;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.*;
+
 
 // ===== 1. Main Class (Entry Point) =====
 public class ImageTool extends Application {
@@ -44,6 +43,24 @@ class ImageModel {
         }
     }
 
+    public Image loadAndResizeImage(File file, int width, int height) {
+        try {
+            // Load original image
+            Image originalImage = new Image(file.toURI().toString());
+            
+            // Create resized version
+            ImageView imageView = new ImageView(originalImage);
+            imageView.setFitWidth(width);
+            imageView.setFitHeight(height);
+            imageView.setPreserveRatio(true);
+            
+            // Render to new image
+            return imageView.snapshot(null, null);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to resize image: " + e.getMessage());
+        }
+    }
+
     public String getImageMetadata(File file) {
         try {
             BufferedImage img = ImageIO.read(file);
@@ -72,7 +89,7 @@ class ImageToolView {
     private Stage stage;
     private ImageToolController controller;
     private VBox root = new VBox(10);
-    private ListView<Image> thumbnailList = new ListView<>();
+    private FlowPane thumbnailContainer = new FlowPane(); // Changed from ListView
     private TextArea metadataArea = new TextArea();
 
     public ImageToolView(Stage stage) {
@@ -81,16 +98,27 @@ class ImageToolView {
         Button convertBtn = new Button("Convert to...");
         Button downloadBtn = new Button("Download");
 
+        // Configure thumbnail container
+        thumbnailContainer.setHgap(10);
+        thumbnailContainer.setVgap(10);
+        thumbnailContainer.setPrefWrapLength(400); // Adjust as needed
+
         uploadBtn.setOnAction(e -> controller.handleUpload());
         convertBtn.setOnAction(e -> controller.handleConvert());
         downloadBtn.setOnAction(e -> controller.handleDownload());
 
-        root.getChildren().addAll(uploadBtn, thumbnailList, metadataArea, convertBtn, downloadBtn);
+        root.getChildren().addAll(uploadBtn, thumbnailContainer, metadataArea, convertBtn, downloadBtn);
         stage.setScene(new Scene(root, 600, 400));
     }
 
-    public void displayThumbnails(List<Image> images) {
-        thumbnailList.getItems().addAll(images);
+    public void displayThumbnails(List<Image> thumbnails) {
+        thumbnailContainer.getChildren().clear();
+        for (Image thumbnail : thumbnails) {
+            ImageView imageView = new ImageView(thumbnail);
+            imageView.setFitWidth(100);
+            imageView.setFitHeight(100);
+            thumbnailContainer.getChildren().add(imageView);
+        }
     }
 
     public void showMetadata(String metadata) {
@@ -122,14 +150,17 @@ class ImageToolController {
 
     public void handleUpload() {
         FileChooser fileChooser = new FileChooser();
-        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.jpg", "*.png", "*.bmp"));
+        fileChooser.getExtensionFilters().add(new FileChooser.ExtensionFilter("Images", "*.jpg", "*.png", "*.bmp", "*.gif"));
         List<File> files = fileChooser.showOpenMultipleDialog(view.getStage());
 
         if (files != null) {
             List<Image> thumbnails = new ArrayList<>();
             for (File file : files) {
-                Image img = model.loadImage(file);
-                thumbnails.add(img);
+                // Load and resize to 100x100 thumbnail
+                Image thumbnail = model.loadAndResizeImage(file, 100, 100);
+                thumbnails.add(thumbnail);
+                
+                // Show metadata (optional)
                 view.showMetadata(model.getImageMetadata(file));
             }
             view.displayThumbnails(thumbnails);
