@@ -12,6 +12,10 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.*;
 
+import com.drew.imaging.ImageMetadataReader;
+import com.drew.metadata.Metadata;
+import com.drew.metadata.exif.ExifSubIFDDirectory;
+import com.drew.metadata.exif.GpsDirectory;
 
 // ===== 1. Main Class (Entry Point) =====
 public class ImageTool extends Application {
@@ -62,15 +66,53 @@ class ImageModel {
     }
 
     public String getImageMetadata(File file) {
+        StringBuilder metadata = new StringBuilder();
+        
+        // Basic metadata
         try {
             BufferedImage img = ImageIO.read(file);
-            return String.format(
-                "Width: %d\nHeight: %d\nFormat: %s",
+            metadata.append(String.format(
+                "Basic Info:\nWidth: %d px\nHeight: %d px\nFormat: %s\n\n",
                 img.getWidth(), img.getHeight(), getFileExtension(file)
-            );
+            ));
         } catch (Exception e) {
-            throw new RuntimeException("Failed to read metadata: " + e.getMessage());
+            metadata.append("Couldn't read basic image properties\n");
         }
+        
+        // EXIF metadata (if available)
+        try {
+            Metadata exifData = ImageMetadataReader.readMetadata(file);
+            metadata.append("EXIF Data:\n");
+            
+            // Get common EXIF tags
+            ExifSubIFDDirectory exifDir = exifData.getFirstDirectoryOfType(ExifSubIFDDirectory.class);
+            if (exifDir != null) {
+                metadata.append(String.format(
+                    "Camera: %s %s\n",
+                    exifDir.getString(ExifSubIFDDirectory.TAG_MAKE),
+                    exifDir.getString(ExifSubIFDDirectory.TAG_MODEL)
+                ));
+                metadata.append(String.format(
+                    "Date Taken: %s\n",
+                    exifDir.getString(ExifSubIFDDirectory.TAG_DATETIME_ORIGINAL)
+                ));
+            }
+            
+            // GPS data
+            GpsDirectory gpsDir = exifData.getFirstDirectoryOfType(GpsDirectory.class);
+            if (gpsDir != null) {
+                metadata.append(String.format(
+                    "Location: %s, %s\n",
+                    gpsDir.getGeoLocation().getLatitude(),
+                    gpsDir.getGeoLocation().getLongitude()
+                ));
+            }
+            
+        } catch (Exception e) {
+            metadata.append("No EXIF data available\n");
+        }
+        
+        return metadata.toString();
     }
 
     public File convertImage(File input, String format) {
@@ -98,16 +140,25 @@ class ImageToolView {
         Button convertBtn = new Button("Convert to...");
         Button downloadBtn = new Button("Download");
 
-        // Configure thumbnail container
+        // Configure UI components
         thumbnailContainer.setHgap(10);
         thumbnailContainer.setVgap(10);
-        thumbnailContainer.setPrefWrapLength(400); // Adjust as needed
+        thumbnailContainer.setPrefWrapLength(400);
+        
+        metadataArea.setEditable(false);
+        metadataArea.setWrapText(true);
+        metadataArea.setPrefHeight(150);
+        
+        ScrollPane scrollPane = new ScrollPane(thumbnailContainer);
+        scrollPane.setFitToWidth(true);
 
+        // Set button actions
         uploadBtn.setOnAction(e -> controller.handleUpload());
         convertBtn.setOnAction(e -> controller.handleConvert());
         downloadBtn.setOnAction(e -> controller.handleDownload());
 
-        root.getChildren().addAll(uploadBtn, thumbnailContainer, metadataArea, convertBtn, downloadBtn);
+        // Add components ONCE
+        root.getChildren().addAll(uploadBtn, scrollPane, metadataArea, convertBtn, downloadBtn);
         stage.setScene(new Scene(root, 600, 400));
     }
 
@@ -119,6 +170,18 @@ class ImageToolView {
             imageView.setFitHeight(100);
             thumbnailContainer.getChildren().add(imageView);
         }
+    }
+
+    public void clearThumbnails() {
+        thumbnailContainer.getChildren().clear();
+    }
+    
+    public void addThumbnail(ImageView imageView) {
+        thumbnailContainer.getChildren().add(imageView);
+    }
+    
+    public FlowPane getThumbnailContainer() {
+        return thumbnailContainer;
     }
 
     public void showMetadata(String metadata) {
@@ -142,6 +205,7 @@ class ImageToolView {
 class ImageToolController {
     private ImageModel model;
     private ImageToolView view;
+    private Map<ImageView, File> imageFileMap = new HashMap<>();
 
     public ImageToolController(ImageModel model, ImageToolView view) {
         this.model = model;
@@ -154,16 +218,30 @@ class ImageToolController {
         List<File> files = fileChooser.showOpenMultipleDialog(view.getStage());
 
         if (files != null) {
-            List<Image> thumbnails = new ArrayList<>();
+            view.clearThumbnails();
+            imageFileMap.clear();
+            
             for (File file : files) {
-                // Load and resize to 100x100 thumbnail
                 Image thumbnail = model.loadAndResizeImage(file, 100, 100);
-                thumbnails.add(thumbnail);
+                ImageView imageView = new ImageView(thumbnail);
+                imageView.setFitWidth(100);
+                imageView.setFitHeight(100);
                 
-                // Show metadata (optional)
-                view.showMetadata(model.getImageMetadata(file));
+                // Store reference to original file
+                imageFileMap.put(imageView, file);
+                
+                // Show metadata when clicked
+                imageView.setOnMouseClicked(e -> showMetadataForImage(imageView));
+                
+                view.addThumbnail(imageView);
             }
-            view.displayThumbnails(thumbnails);
+        }
+    }
+
+    private void showMetadataForImage(ImageView imageView) {
+        File file = imageFileMap.get(imageView);
+        if (file != null) {
+            view.showMetadata(model.getImageMetadata(file));
         }
     }
 
