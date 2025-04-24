@@ -10,6 +10,9 @@ import javafx.stage.Stage;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 
 import com.drew.imaging.ImageMetadataReader;
@@ -115,9 +118,42 @@ class ImageModel {
         return metadata.toString();
     }
 
-    public File convertImage(File input, String format) {
-        ImageConverter converter = ImageConverterFactory.getConverter(format);
-        return converter.convert(input);
+    public File convertImage(File input, String format) throws IOException {
+        BufferedImage image = ImageIO.read(input);
+        if (image == null) {
+            throw new IOException("Unsupported image format");
+        }
+
+        // Create output filename
+        String outputName = input.getName().replaceFirst("[.][^.]+$", "") + 
+                          "_converted." + format.toLowerCase();
+        File output = new File(input.getParent(), outputName);
+
+        // Convert based on format
+        boolean success;
+        switch (format.toLowerCase()) {
+            case "jpeg":
+            case "jpg":
+                success = ImageIO.write(image, "jpg", output);
+                break;
+            case "png":
+                success = ImageIO.write(image, "png", output);
+                break;
+            case "bmp":
+                success = ImageIO.write(image, "bmp", output);
+                break;
+            case "gif":
+                success = ImageIO.write(image, "gif", output);
+                break;
+            default:
+                throw new IOException("Unsupported output format: " + format);
+        }
+
+        if (!success) {
+            throw new IOException("Failed to convert image to " + format);
+        }
+
+        return output;
     }
 
     private String getFileExtension(File file) {
@@ -133,12 +169,13 @@ class ImageToolView {
     private VBox root = new VBox(10);
     private FlowPane thumbnailContainer = new FlowPane(); // Changed from ListView
     private TextArea metadataArea = new TextArea();
+    private ComboBox<String> formatComboBox = new ComboBox<>();
+    private Button convertBtn = new Button("Convert");
+    private Button downloadBtn = new Button("Download");
 
     public ImageToolView(Stage stage) {
         this.stage = stage;
         Button uploadBtn = new Button("Upload Image");
-        Button convertBtn = new Button("Convert to...");
-        Button downloadBtn = new Button("Download");
 
         // Configure UI components
         thumbnailContainer.setHgap(10);
@@ -149,17 +186,45 @@ class ImageToolView {
         metadataArea.setWrapText(true);
         metadataArea.setPrefHeight(150);
         
+        // Setup format selection
+        formatComboBox.getItems().addAll("JPEG", "PNG", "BMP", "GIF");
+        formatComboBox.setValue("JPEG");
+        
+        // Disable download initially
+        downloadBtn.setDisable(true);
+
         ScrollPane scrollPane = new ScrollPane(thumbnailContainer);
         scrollPane.setFitToWidth(true);
+
+        // Layout
+        HBox conversionBox = new HBox(10, 
+            new Label("Convert to:"), 
+            formatComboBox, 
+            convertBtn,
+            downloadBtn
+        );
+
+        root.getChildren().addAll(
+            uploadBtn,
+            scrollPane,
+            metadataArea,
+            conversionBox
+        );
 
         // Set button actions
         uploadBtn.setOnAction(e -> controller.handleUpload());
         convertBtn.setOnAction(e -> controller.handleConvert());
         downloadBtn.setOnAction(e -> controller.handleDownload());
 
-        // Add components ONCE
-        root.getChildren().addAll(uploadBtn, scrollPane, metadataArea, convertBtn, downloadBtn);
-        stage.setScene(new Scene(root, 600, 400));
+        stage.setScene(new Scene(root, 650, 500));
+    }
+
+    public String getSelectedFormat() {
+        return formatComboBox.getValue();
+    }
+
+    public void enableDownload(boolean enable) {
+        downloadBtn.setDisable(!enable);
     }
 
     public void displayThumbnails(List<Image> thumbnails) {
@@ -192,6 +257,10 @@ class ImageToolView {
         new Alert(Alert.AlertType.ERROR, message).show();
     }
 
+    public void showSuccess(String message) {
+        new Alert(Alert.AlertType.INFORMATION, message).show();
+    }
+
     public void setController(ImageToolController controller) {
         this.controller = controller;
     }
@@ -206,6 +275,7 @@ class ImageToolController {
     private ImageModel model;
     private ImageToolView view;
     private Map<ImageView, File> imageFileMap = new HashMap<>();
+    private List<File> convertedFiles = new ArrayList<>();
 
     public ImageToolController(ImageModel model, ImageToolView view) {
         this.model = model;
@@ -246,11 +316,63 @@ class ImageToolController {
     }
 
     public void handleConvert() {
-        // TODO: Let user select format (JPEG, PNG, BMP) and convert
+        if (imageFileMap.isEmpty()) {
+            view.showError("Please upload images first");
+            return;
+        }
+
+        convertedFiles.clear();
+        String format = view.getSelectedFormat();
+
+        new Thread(() -> {
+            try {
+                for (File originalFile : imageFileMap.values()) {
+                    File convertedFile = model.convertImage(originalFile, format);
+                    convertedFiles.add(convertedFile);
+                }
+                
+                javafx.application.Platform.runLater(() -> {
+                    view.enableDownload(true);
+                    view.showSuccess(convertedFiles.size() + " images converted successfully!");
+                });
+            } catch (Exception e) {
+                javafx.application.Platform.runLater(() -> {
+                    view.showError("Conversion failed: " + e.getMessage());
+                });
+            }
+        }).start();
     }
 
     public void handleDownload() {
-        // TODO: Let user download converted images
+        if (convertedFiles.isEmpty()) {
+            view.showError("No converted files available");
+            return;
+        }
+
+        FileChooser fileChooser = new FileChooser();
+        fileChooser.setTitle("Save Converted Images");
+        fileChooser.setInitialFileName("converted_images");
+        
+        // Set extension filter
+        String format = view.getSelectedFormat().toLowerCase();
+        fileChooser.getExtensionFilters().add(
+            new FileChooser.ExtensionFilter(format.toUpperCase() + " Files", "*." + format)
+        );
+
+        File destination = fileChooser.showSaveDialog(view.getStage());
+        if (destination != null) {
+            try {
+                String dirPath = destination.getParent();
+                for (File convertedFile : convertedFiles) {
+                    String newPath = dirPath + File.separator + convertedFile.getName();
+                    Files.copy(convertedFile.toPath(), new File(newPath).toPath(), 
+                             StandardCopyOption.REPLACE_EXISTING);
+                }
+                view.showSuccess("Files saved successfully!");
+            } catch (Exception e) {
+                view.showError("Failed to save files: " + e.getMessage());
+            }
+        }
     }
 }
 
