@@ -5,6 +5,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.image.*;
 import javafx.scene.layout.*;
+import javafx.stage.DirectoryChooser;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import javax.imageio.ImageIO;
@@ -156,6 +157,15 @@ class ImageModel {
         return output;
     }
 
+    // Change return type to BufferedImage
+    public BufferedImage convertImageInMemory(File input, String format) throws IOException {
+        BufferedImage image = ImageIO.read(input);
+        if (image == null) {
+            throw new IOException("Unsupported image format");
+        }
+        return image;
+    }
+
     private String getFileExtension(File file) {
         String name = file.getName();
         return name.substring(name.lastIndexOf(".") + 1);
@@ -275,7 +285,7 @@ class ImageToolController {
     private ImageModel model;
     private ImageToolView view;
     private Map<ImageView, File> imageFileMap = new HashMap<>();
-    private List<File> convertedFiles = new ArrayList<>();
+    private Map<File, BufferedImage> convertedImages = new HashMap<>();
 
     public ImageToolController(ImageModel model, ImageToolView view) {
         this.model = model;
@@ -321,19 +331,19 @@ class ImageToolController {
             return;
         }
 
-        convertedFiles.clear();
+        convertedImages.clear();
         String format = view.getSelectedFormat();
 
         new Thread(() -> {
             try {
                 for (File originalFile : imageFileMap.values()) {
-                    File convertedFile = model.convertImage(originalFile, format);
-                    convertedFiles.add(convertedFile);
+                    BufferedImage converted = model.convertImageInMemory(originalFile, format);
+                    convertedImages.put(originalFile, converted);
                 }
                 
                 javafx.application.Platform.runLater(() -> {
                     view.enableDownload(true);
-                    view.showSuccess(convertedFiles.size() + " images converted successfully!");
+                    view.showSuccess("Images ready for download!");
                 });
             } catch (Exception e) {
                 javafx.application.Platform.runLater(() -> {
@@ -344,31 +354,31 @@ class ImageToolController {
     }
 
     public void handleDownload() {
-        if (convertedFiles.isEmpty()) {
-            view.showError("No converted files available");
+        if (convertedImages.isEmpty()) {
+            view.showError("No converted images available");
             return;
         }
 
-        FileChooser fileChooser = new FileChooser();
-        fileChooser.setTitle("Save Converted Images");
-        fileChooser.setInitialFileName("converted_images");
-        
-        // Set extension filter
-        String format = view.getSelectedFormat().toLowerCase();
-        fileChooser.getExtensionFilters().add(
-            new FileChooser.ExtensionFilter(format.toUpperCase() + " Files", "*." + format)
-        );
+        DirectoryChooser dirChooser = new DirectoryChooser();
+        dirChooser.setTitle("Select Download Location");
+        File saveDir = dirChooser.showDialog(view.getStage());
 
-        File destination = fileChooser.showSaveDialog(view.getStage());
-        if (destination != null) {
+        if (saveDir != null) {
             try {
-                String dirPath = destination.getParent();
-                for (File convertedFile : convertedFiles) {
-                    String newPath = dirPath + File.separator + convertedFile.getName();
-                    Files.copy(convertedFile.toPath(), new File(newPath).toPath(), 
-                             StandardCopyOption.REPLACE_EXISTING);
+                String format = view.getSelectedFormat().toLowerCase();
+                int savedCount = 0;
+                
+                for (Map.Entry<File, BufferedImage> entry : convertedImages.entrySet()) {
+                    String outputName = entry.getKey().getName()
+                        .replaceFirst("[.][^.]+$", "") 
+                        + "_converted." + format;
+                    
+                    File output = new File(saveDir, outputName);
+                    ImageIO.write(entry.getValue(), format, output);
+                    savedCount++;
                 }
-                view.showSuccess("Files saved successfully!");
+                
+                view.showSuccess(savedCount + " files saved to:\n" + saveDir.getAbsolutePath());
             } catch (Exception e) {
                 view.showError("Failed to save files: " + e.getMessage());
             }
